@@ -1,0 +1,478 @@
+
+<html>
+<head>
+<script language="javascript">
+///////////////////////////////////////Class Color//////////////////////////////////////////////
+function Color(r,g,b)
+{
+	this.r = r;
+	this.g = g;
+	this.b = b;
+	this.a = 1.0;
+}
+Color.prototype = {};
+Color.prototype.scale = function(factor)
+{
+	r = this.r * factor;
+	g = this.g * factor;
+	b = this.b * factor;
+	return new Color(r, g, b);
+}
+Color.prototype.add = function(v)
+{
+	r = v.r + this.r;
+	g = v.g + this.g;
+	b = v.b + this.b;
+	return new Color(r, g, b);
+}
+Color.prototype.modulate = function(v)
+{
+	r = v.r * this.r;
+	g = v.g * this.g;
+	b = v.b * this.b;
+	return new Color(r, g, b);
+}
+
+///////////////////////////////////////Class vector//////////////////////////////////////////////
+function vector(x, y, z)
+{
+	this.x = x;
+	this.y = y;
+	this.z = z;
+}
+vector.prototype = {};
+vector.prototype.add = function(v) 
+{
+	x = v.x + this.x;
+	y = v.y + this.y;
+	z = v.z + this.z;
+	return new vector(x, y, z);
+}
+vector.prototype.sub = function(v) 
+{
+	x = this.x - v.x;
+	y = this.y - v.y;
+	z = this.z - v.z;
+	return new vector(x, y, z);
+}
+vector.prototype.dot = function(v) 
+{
+	return this.x*v.x + this.y*v.y + this.z*v.z;
+}
+vector.prototype.cross = function(v) 
+{
+	x = this.y*v.z - this.z*v.y;
+	y = this.z*v.x - this.x*v.z;
+	z = this.x*v.y - this.y*v.x;
+	return new vector(x, y, z);
+}
+vector.prototype.normalize = function()
+{
+	var length = this.length();
+	x = this.x / length;
+	y = this.y / length;
+	z = this.z / length;
+	return new vector(x, y, z);
+}
+vector.prototype.length = function()
+{
+	var square = function(x){return x*x};
+	return Math.sqrt(square(this.x) + square(this.y) + square(this.z));
+}
+vector.prototype.scale = function(factor)
+{
+	x = this.x * factor;
+	y = this.y * factor;
+	z = this.z * factor;
+	return new vector(x, y, z);
+}
+vector.prototype.reflect = function(normal)
+{
+	var reflectVector = this.sub(normal.scale(this.dot(normal)*2));
+	return reflectVector;
+}
+vector.prototype.refract = function(normal, factorFrom, factorTo)
+{
+	
+}
+
+///////////////////////////////////////Struct ScanRay//////////////////////////////////////////////
+function ScanRay(from, to)
+{
+	this.from = from;
+	this.to = to;
+}
+
+///////////////////////////////////////Class canvasRender//////////////////////////////////////////////
+function canvasRender(eye, lookAt, fov)
+{
+	// assume aspect rate is 800/600, fov is horizontal fov
+	this.eye = eye;
+	this.lookAt = lookAt;
+	this.lookAt = lookAt.add(lookAt.sub(eye).normalize().scale(100));
+	this.fov = fov;
+	this.diffuseLighting = undefined;
+}
+canvasRender.prototype = {};
+canvasRender.prototype.render = function()
+{
+	var canvas = document.getElementById("3dcanvas");
+	var ctx = canvas.getContext("2d");
+	ctx.fillStyle = "rgb(0,0,0)";
+	ctx.fillRect(0, 0, 800, 600);
+	var bmpData = ctx.getImageData(0,0,800,600);
+	var rawData = bmpData.data;
+	
+	var verticalFov = this.fov * 6 / 8;
+	var centerRay = this.lookAt.sub(this.eye);
+	var length = centerRay.length();
+	var up = new vector(0, 1, 0);
+	var left = up.cross(centerRay).normalize();
+	var lengthx = Math.tan(this.fov/2) * length;
+	var lengthy = Math.tan(verticalFov/2) * length;
+	var leftVector = left.scale(lengthx);
+	var upVector = up.scale(lengthy);
+	var upperLeftRay = centerRay.add(leftVector).add(upVector);
+	var stepXVector = leftVector.scale(1 / 400);
+	var stepYVector = upVector.scale(1 / 300); 
+	
+	var to = this.eye.add(upperLeftRay);
+	//var to = new vector(0, 0, -100);
+	var scanRay = new ScanRay(this.eye, to);
+	var i=0;
+	for(verticalPixel=0; verticalPixel<600; verticalPixel++)
+	{
+		for(horizontalPixel=0; horizontalPixel<800;horizontalPixel++)
+		{
+			if(verticalPixel==300&&horizontalPixel==400)
+			{
+				continue;
+			}
+			var color = this.RayTracing(scanRay);
+			rawData[i++] = color.r * 255;
+			rawData[i++] = color.g * 255;
+			rawData[i++] = color.b * 255;
+			rawData[i++] = color.a * 255;
+			scanRay.to = scanRay.to.sub(stepXVector);
+		}
+		scanRay.to = scanRay.to.add(leftVector.scale(2));
+		scanRay.to = scanRay.to.sub(stepYVector);
+	}
+	
+	ctx.putImageData(bmpData, 0, 0);
+}
+
+canvasRender.prototype.RayTracing = function(ray)
+{
+	var minimalZ = 9999999999;
+	var resultColor = undefined;
+	for(i=0; i<s.objList.length; i++)
+	{
+		collisionInfo = s.objList[i].CollisionWithRay(ray);
+		if(collisionInfo == undefined)
+		{
+			continue;
+		}
+		else
+		{
+			var z = collisionInfo.position.sub(ray.from).length();
+			if (z < minimalZ)
+			{
+				minimalZ = z;
+				// calculate color
+				// using lighting model
+				resultColor = this.diffuseLightingModel(collisionInfo);
+				resultColor = resultColor.add(this.specularLightingModel(collisionInfo));
+				
+				shadowRay = {from:collisionInfo.position, to:l.position};
+				
+				for(j=0; j<s.objList.length; j++)
+				{
+					var shadowInfo;
+					if ( j != i )
+					{
+						shadowInfo = s.objList[j].CollisionWithRay(shadowRay);
+					}
+					if (shadowInfo != undefined)
+					{
+						resultColor = new Color(0, 0, 0);
+					}
+				}
+				resultColor = resultColor.add(this.ambientLightingModel(collisionInfo));
+				
+				// WARNING!!!Now it will cause infinite reflection, don't add more than one reflectable object
+				var obj = collisionInfo.object;
+				if (obj.reflectionFactor != undefined)
+				{
+					// calculate reflection
+					var factor = obj.reflectionFactor;
+					resultColor.scale(1-factor);
+					var cameraToPoint = collisionInfo.position.sub(ray.from);
+					var reflectionDirection = cameraToPoint.reflect(collisionInfo.normal);
+					var reflectionRay = {from:collisionInfo.position, to:collisionInfo.position.add(reflectionDirection)};
+					var reflectColor = this.RayTracing(reflectionRay);
+					resultColor = resultColor.add(reflectColor.scale(factor));
+				}
+				
+				//resultColor = resultColor.add(new Color(0.3, 0.3, 0.3));
+			}
+		}
+	}
+	if (resultColor == undefined)
+	{
+		return new Color(0, 0, 0);
+	}
+	else
+	{
+		return resultColor;
+	}
+}
+
+canvasRender.prototype.setDiffuseLightingModel = function(func)
+{
+	this.diffuseLightingModel = func;
+}
+
+canvasRender.prototype.setSpecularLightingModel = function(func)
+{
+	this.specularLightingModel = func;
+}
+canvasRender.prototype.setAmbientLightingModel = function(func)
+{
+	this.ambientLightingModel = func;
+}
+
+///////////////////////////////////////Struct CollisionInfo//////////////////////////////////////////////
+function CollisionInfo()
+{
+}
+
+///////////////////////////////////////Class shape//////////////////////////////////////////////
+function shape()
+{
+	this.sampler = undefined;
+}
+shape.prototype = {};
+shape.prototype.setColor = function(color)
+{
+	this.color = color;
+}
+
+shape.prototype.setMaterial = function(shiness, specular, reflectionFactor)
+{
+	this.shiness = shiness;
+	this.specular = specular;
+	this.reflectionFactor = reflectionFactor;
+}
+shape.prototype.CollisionWithRay = function(ray)
+{
+	alert("no implementation for absolute virtual class");
+}
+shape.prototype.setSampler = function(func)
+{
+	this.sampler = func;
+}
+
+///////////////////////////////////////Class sphere : shape//////////////////////////////////////////////
+function sphere(center, radius)
+{
+	this.center = center;
+	this.radius = radius;
+}
+sphere.prototype = new shape();
+sphere.prototype.CollisionWithRay = function(ray)
+{
+	var rayVector = ray.to.sub(ray.from).normalize();
+	
+	var projectLength = this.center.sub(ray.from).dot(rayVector);
+	var distance = ray.from.add(rayVector.scale(projectLength)).sub(this.center).length();
+	if (distance < this.radius)
+	{
+		var halfSlice = Math.sqrt(this.radius*this.radius - distance*distance);
+		if (projectLength - halfSlice < 0)
+		{
+			return undefined;
+		}
+		var collisionPoint = ray.from.add(rayVector.scale(projectLength-halfSlice));
+		var collisionInfo = new CollisionInfo();
+		collisionInfo.position = collisionPoint;
+		collisionInfo.normal = collisionPoint.sub(this.center).normalize();
+		collisionInfo.object = this;
+		return collisionInfo;
+	}
+	else
+	{
+		return undefined;
+	}
+}
+///////////////////////////////////////Class plane : shape//////////////////////////////////////////////
+function plane(normal, dist)
+{
+	this.normal = normal;
+	this.dist = dist;
+}
+plane.prototype = new shape();
+plane.prototype.CollisionWithRay = function(ray)
+{
+	var rayVector = ray.to.sub(ray.from);
+	var normal = this.normal.normalize();
+	var a = ray.from.dot(normal) + this.dist;
+	var b = ray.to.dot(normal) + this.dist;
+	if ( a * b < 0)
+	{
+		var f = a / (a-b);
+		var collisionPoint = ray.from.add(rayVector.scale(f));
+		var collisionInfo = new CollisionInfo();
+		collisionInfo.position = collisionPoint;
+		collisionInfo.normal = normal;
+		collisionInfo.object = this;
+		return collisionInfo;
+	}
+	else
+	{
+		return undefined;
+	}
+}
+
+///////////////////////////////////////Class light//////////////////////////////////////////////
+function light(position)
+{
+	this.position = position;
+	this.color = new Color(1.0, 1.0, 1.0);
+	this.ambient = new Color(0.2, 0.2, 0.2);
+}
+
+///////////////////////////////////////Lighting Model Functions//////////////////////////////////////////////
+function lambertModel(collisionInfo)
+{
+	var clampColor = function(color)
+	{
+		if (color.r > 1) color.r = 1;
+		if (color.r < 0) color.r = 0;
+		if (color.g > 1) color.g = 1;
+		if (color.g < 0) color.g = 0;
+		if (color.b > 1) color.b = 1;
+		if (color.b < 0) color.b = 0;
+	}
+	var obj = collisionInfo.object;
+	var materialColor;
+	if (obj.sampler == undefined)
+	{
+		materialColor = obj.color;
+	}
+	else
+	{
+		materialColor = obj.color.modulate(obj.sampler(collisionInfo));
+	}
+	var normal = collisionInfo.normal;
+	var lightDirection = l.position.sub(collisionInfo.position);
+	var color = materialColor.scale(lightDirection.normalize().dot(normal));
+	clampColor(color);
+	return color;
+}
+
+function phoneModel(collisionInfo)
+{
+	var clampColor = function(color)
+	{
+		if (color.r > 1) color.r = 1;
+		if (color.r < 0) color.r = 0;
+		if (color.g > 1) color.g = 1;
+		if (color.g < 0) color.g = 0;
+		if (color.b > 1) color.b = 1;
+		if (color.b < 0) color.b = 0;
+	}
+	var specularColor = collisionInfo.object.specular;
+	var normal = collisionInfo.normal;
+	var lightDirection = l.position.sub(collisionInfo.position);
+	var specularIntense = Math.pow(lightDirection.normalize().dot(normal), collisionInfo.object.shiness);
+	var color = specularColor.scale(specularIntense);
+	clampColor(color);
+	return color;
+}
+
+function plainAmbient(collisionInfo)
+{
+	var obj = collisionInfo.object;
+	var materialColor;
+	if (obj.sampler == undefined)
+	{
+		materialColor = obj.color;
+	}
+	else
+	{
+		materialColor = obj.color.modulate(obj.sampler(collisionInfo));
+	}
+	var color = materialColor.modulate(l.ambient);
+	return color;
+}
+
+///////////////////////////////////////Sampler Functions//////////////////////////////////////////////
+// Just for plain, avoid tangant space
+function monochromeSampler(collisionInfo)
+{
+	var normal = collisionInfo.normal;
+	var pos = collisionInfo.position;
+	var coordX, coordY;
+	if ( normal.x !=  0) {coordX = pos.y; coordY = pos.z;};
+	if ( normal.y !=  0) {coordX = pos.x; coordY = pos.z;};
+	if ( normal.z !=  0) {coordX = pos.x; coordY = pos.y;};
+	
+	coordX = Math.ceil(coordX / 2);
+	coordY = Math.ceil(coordY / 2);
+	if ( Math.abs(coordX % 2) + Math.abs(coordY % 2) == 1 )
+	{
+		return new Color(0.9, 0.9, 0.9);
+	}
+	else
+	{
+		return new Color(0.2, 0.2, 0.2)
+	}
+}
+
+///////////////////////////////////////World Initialization//////////////////////////////////////////////
+function scene()
+{
+	this.objList = new Array();
+	var center = new vector(0, 0, -10);
+	this.objList[0] = new sphere(center, 3);
+	this.objList[0].setColor(new Color(0.7, 0.3, 0.0));
+	this.objList[0].setMaterial( 10, new Color(1.0, 1.0, 1.0), 0.05);
+	this.objList[1] = new plane(new vector(0, 1, 0), 3);
+	this.objList[1].setColor(new Color(1.0, 1.0, 1.0));
+	this.objList[1].setMaterial( 0, new Color(0.0, 0.0, 0.0));
+	this.objList[1].setSampler(monochromeSampler);
+	this.objList[2] = new plane(new vector(1, 0, 0), 5);
+	this.objList[2].setColor(new Color(1.0, 1.0, 1.0));
+	this.objList[2].setMaterial( 0, new Color(0.0, 0.0, 0.0));
+	this.objList[2].setSampler(monochromeSampler);
+	this.objList[3] = new plane(new vector(0, 0, 1), 20);
+	this.objList[3].setColor(new Color(1.0, 1.0, 1.0));
+	this.objList[3].setMaterial( 0, new Color(0.0, 0.0, 0.0));
+	this.objList[3].setSampler(monochromeSampler);
+}
+
+///////////////////////////////////////Main Function//////////////////////////////////////////////
+function load()
+{
+	//p = new plane(new vector(1, 0, 0), 0);
+	//var ray = {from: new vector(-10, 0, 0), to: new vector(10, 0, 0)};
+	//p.CollisionWithRay(ray);
+	s = new scene();
+	
+	l = new light(new vector(10, 10, 0));
+	r = new canvasRender(new vector(0, 5, 20), new vector(0, 0, -10), Math.PI/360*60);
+	//r = new canvasRender(new vector(0, 0, 20), new vector(0, 0, -10), Math.PI/360*60);
+	r.setDiffuseLightingModel(lambertModel);
+	r.setSpecularLightingModel(phoneModel);
+	r.setAmbientLightingModel(plainAmbient);
+	r.render();
+}
+
+</script>
+</head>
+<body onload="">
+<canvas id="3dcanvas" width="800" height="600"></canvas><br/>
+<button type="button" onclick="load()">Run!</button>
+</body>
+</html>
