@@ -140,9 +140,9 @@ canvasRender.prototype.render = function()
 	//var to = new vector(0, 0, -100);
 	var scanRay = new ScanRay(this.eye, to);
 	var i=0;
-	for(verticalPixel=0; verticalPixel<600; verticalPixel++)
+	for(var verticalPixel=0; verticalPixel<600; verticalPixel++)
 	{
-		for(horizontalPixel=0; horizontalPixel<800;horizontalPixel++)
+		for(var horizontalPixel=0; horizontalPixel<800;horizontalPixel++)
 		{
 			if(verticalPixel==300&&horizontalPixel==400)
 			{
@@ -162,11 +162,21 @@ canvasRender.prototype.render = function()
 	ctx.putImageData(bmpData, 0, 0);
 }
 
-canvasRender.prototype.RayTracing = function(ray)
+canvasRender.prototype.RayTracing = function(ray, intense)
 {
 	var minimalZ = 9999999999;
 	var resultColor = undefined;
-	for(i=0; i<s.objList.length; i++)
+	
+	if (intense == undefined)
+	{
+		intense = 1.0;
+	}
+	if (intense < 0.01)
+	{
+		return new Color(0,0,0);
+	}
+
+	for(var i=0; i<s.objList.length; i++)
 	{
 		collisionInfo = s.objList[i].CollisionWithRay(ray);
 		if(collisionInfo == undefined)
@@ -186,7 +196,7 @@ canvasRender.prototype.RayTracing = function(ray)
 				
 				shadowRay = {from:collisionInfo.position, to:l.position};
 				
-				for(j=0; j<s.objList.length; j++)
+				for(var j=0; j<s.objList.length; j++)
 				{
 					var shadowInfo;
 					if ( j != i )
@@ -210,7 +220,7 @@ canvasRender.prototype.RayTracing = function(ray)
 					var cameraToPoint = collisionInfo.position.sub(ray.from);
 					var reflectionDirection = cameraToPoint.reflect(collisionInfo.normal);
 					var reflectionRay = {from:collisionInfo.position, to:collisionInfo.position.add(reflectionDirection)};
-					var reflectColor = this.RayTracing(reflectionRay);
+					var reflectColor = this.RayTracing(reflectionRay, intense * factor);
 					resultColor = resultColor.add(reflectColor.scale(factor));
 				}
 				
@@ -440,7 +450,7 @@ function scene()
 	this.objList[0].setMaterial( 10, new Color(1.0, 1.0, 1.0), 0.05);
 	this.objList[1] = new plane(new vector(0, 1, 0), 3);
 	this.objList[1].setColor(new Color(1.0, 1.0, 1.0));
-	this.objList[1].setMaterial( 0, new Color(0.0, 0.0, 0.0));
+	this.objList[1].setMaterial( 0, new Color(0.0, 0.0, 0.0), 0.1);
 	this.objList[1].setSampler(monochromeSampler);
 	this.objList[2] = new plane(new vector(1, 0, 0), 5);
 	this.objList[2].setColor(new Color(1.0, 1.0, 1.0));
@@ -452,6 +462,11 @@ function scene()
 	this.objList[3].setSampler(monochromeSampler);
 }
 
+function createLight(lightArray)
+{
+	
+}
+
 ///////////////////////////////////////Main Function//////////////////////////////////////////////
 function load()
 {
@@ -459,7 +474,8 @@ function load()
 	//var ray = {from: new vector(-10, 0, 0), to: new vector(10, 0, 0)};
 	//p.CollisionWithRay(ray);
 	s = new scene();
-	
+	//l = new Array();
+	//l[0] = new light(new vector(10, 10, 0));
 	l = new light(new vector(10, 10, 0));
 	r = new canvasRender(new vector(0, 5, 20), new vector(0, 0, -10), Math.PI/360*60);
 	//r = new canvasRender(new vector(0, 0, 20), new vector(0, 0, -10), Math.PI/360*60);
