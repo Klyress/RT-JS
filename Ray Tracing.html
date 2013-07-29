@@ -137,17 +137,12 @@ canvasRender.prototype.render = function()
 	var stepYVector = upVector.scale(1 / 300); 
 	
 	var to = this.eye.add(upperLeftRay);
-	//var to = new vector(0, 0, -100);
 	var scanRay = new ScanRay(this.eye, to);
 	var i=0;
 	for(var verticalPixel=0; verticalPixel<600; verticalPixel++)
 	{
 		for(var horizontalPixel=0; horizontalPixel<800;horizontalPixel++)
 		{
-			if(verticalPixel==300&&horizontalPixel==400)
-			{
-				continue;
-			}
 			var color = this.RayTracing(scanRay);
 			rawData[i++] = color.r * 255;
 			rawData[i++] = color.g * 255;
@@ -165,7 +160,7 @@ canvasRender.prototype.render = function()
 canvasRender.prototype.RayTracing = function(ray, intense)
 {
 	var minimalZ = 9999999999;
-	var resultColor = undefined;
+	var resultColor = new Color(0, 0, 0);
 	
 	if (intense == undefined)
 	{
@@ -176,66 +171,82 @@ canvasRender.prototype.RayTracing = function(ray, intense)
 		return new Color(0,0,0);
 	}
 
+	// get the nearest z;
+	var collisionInfo = new Array();
+	var minimalZIndex;
 	for(var i=0; i<s.objList.length; i++)
 	{
-		collisionInfo = s.objList[i].CollisionWithRay(ray);
-		if(collisionInfo == undefined)
+		collisionInfo[i] = s.objList[i].CollisionWithRay(ray);
+		if(collisionInfo[i] == undefined)
 		{
 			continue;
 		}
 		else
 		{
-			var z = collisionInfo.position.sub(ray.from).length();
-			if (z < minimalZ)
+			var z = collisionInfo[i].position.sub(ray.from).length();
+			if (z<minimalZ)
 			{
+				minimalZIndex = i;
 				minimalZ = z;
-				// calculate color
-				// using lighting model
-				resultColor = this.diffuseLightingModel(collisionInfo);
-				resultColor = resultColor.add(this.specularLightingModel(collisionInfo));
-				
-				shadowRay = {from:collisionInfo.position, to:l.position};
-				
-				for(var j=0; j<s.objList.length; j++)
-				{
-					var shadowInfo;
-					if ( j != i )
-					{
-						shadowInfo = s.objList[j].CollisionWithRay(shadowRay);
-					}
-					if (shadowInfo != undefined)
-					{
-						resultColor = new Color(0, 0, 0);
-					}
-				}
-				resultColor = resultColor.add(this.ambientLightingModel(collisionInfo));
-				
-				// WARNING!!!Now it will cause infinite reflection, don't add more than one reflectable object
-				var obj = collisionInfo.object;
-				if (obj.reflectionFactor != undefined)
-				{
-					// calculate reflection
-					var factor = obj.reflectionFactor;
-					resultColor.scale(1-factor);
-					var cameraToPoint = collisionInfo.position.sub(ray.from);
-					var reflectionDirection = cameraToPoint.reflect(collisionInfo.normal);
-					var reflectionRay = {from:collisionInfo.position, to:collisionInfo.position.add(reflectionDirection)};
-					var reflectColor = this.RayTracing(reflectionRay, intense * factor);
-					resultColor = resultColor.add(reflectColor.scale(factor));
-				}
-				
-				//resultColor = resultColor.add(new Color(0.3, 0.3, 0.3));
 			}
 		}
 	}
-	if (resultColor == undefined)
+	if (minimalZIndex == undefined)
 	{
 		return new Color(0, 0, 0);
 	}
-	else
+	
+	var ci = collisionInfo[minimalZIndex];
+	for(var i=0; i<l.length; i++)
+		resultColor = resultColor.add(this.illuminate(ci, l[i]));
+	
+	// calculate reflection and refraction, now only reflection though...
+	var obj = ci.object;
+	if (obj.reflectionFactor != undefined)
 	{
-		return resultColor;
+		// calculate reflection
+		var factor = obj.reflectionFactor;
+		resultColor.scale(1-factor);
+		var cameraToPoint = ci.position.sub(ray.from);
+		var reflectionDirection = cameraToPoint.reflect(ci.normal);
+		var reflectionRay = {from:ci.position, to:ci.position.add(reflectionDirection)};
+		var reflectColor = this.RayTracing(reflectionRay, intense * factor);
+		resultColor = resultColor.add(reflectColor.scale(factor));
 	}
+
+	return resultColor;
+}
+
+canvasRender.prototype.illuminate = function(collisionInfo, light)
+{
+	// cast shadow ray to decide if direct lighting exist
+	shadowRay = {from:collisionInfo.position, to:light.position};
+				
+	for(var j=0; j<s.objList.length; j++)
+	{
+		var shadowInfo;
+		//collision shadow ray with all objects except the drawn object
+		if ( s.objList[j] != collisionInfo.object )
+		{
+			shadowInfo = s.objList[j].CollisionWithRay(shadowRay);
+		}
+		if (shadowInfo != undefined)
+		{
+			resultColor = new Color(0, 0, 0);
+			break;
+		}
+		else
+		{
+			// calculate direct lighting color
+			// using lighting model
+			resultColor = this.diffuseLightingModel(collisionInfo, light);
+			resultColor = resultColor.add(this.specularLightingModel(collisionInfo, light));
+		}
+	}
+	
+	resultColor = resultColor.add(this.ambientLightingModel(collisionInfo, light));
+
+	return resultColor;
 }
 
 canvasRender.prototype.setDiffuseLightingModel = function(func)
@@ -348,12 +359,12 @@ plane.prototype.CollisionWithRay = function(ray)
 function light(position)
 {
 	this.position = position;
-	this.color = new Color(1.0, 1.0, 1.0);
-	this.ambient = new Color(0.2, 0.2, 0.2);
+	this.color = new Color(1.0/16, 1.0/16, 1.0/16);
+	this.ambient = new Color(0.2/16, 0.2/16, 0.2/16);
 }
 
 ///////////////////////////////////////Lighting Model Functions//////////////////////////////////////////////
-function lambertModel(collisionInfo)
+function lambertModel(collisionInfo, light)
 {
 	var clampColor = function(color)
 	{
@@ -375,13 +386,13 @@ function lambertModel(collisionInfo)
 		materialColor = obj.color.modulate(obj.sampler(collisionInfo));
 	}
 	var normal = collisionInfo.normal;
-	var lightDirection = l.position.sub(collisionInfo.position);
-	var color = materialColor.scale(lightDirection.normalize().dot(normal));
+	var lightDirection = light.position.sub(collisionInfo.position);
+	var color = materialColor.modulate(light.color).scale(lightDirection.normalize().dot(normal));
 	clampColor(color);
 	return color;
 }
 
-function phoneModel(collisionInfo)
+function phoneModel(collisionInfo, light)
 {
 	var clampColor = function(color)
 	{
@@ -394,14 +405,14 @@ function phoneModel(collisionInfo)
 	}
 	var specularColor = collisionInfo.object.specular;
 	var normal = collisionInfo.normal;
-	var lightDirection = l.position.sub(collisionInfo.position);
+	var lightDirection = light.position.sub(collisionInfo.position);
 	var specularIntense = Math.pow(lightDirection.normalize().dot(normal), collisionInfo.object.shiness);
-	var color = specularColor.scale(specularIntense);
+	var color = specularColor.modulate(light.color).scale(specularIntense);
 	clampColor(color);
 	return color;
 }
 
-function plainAmbient(collisionInfo)
+function plainAmbient(collisionInfo, light)
 {
 	var obj = collisionInfo.object;
 	var materialColor;
@@ -413,7 +424,7 @@ function plainAmbient(collisionInfo)
 	{
 		materialColor = obj.color.modulate(obj.sampler(collisionInfo));
 	}
-	var color = materialColor.modulate(l.ambient);
+	var color = materialColor.modulate(light.ambient);
 	return color;
 }
 
@@ -474,9 +485,12 @@ function load()
 	//var ray = {from: new vector(-10, 0, 0), to: new vector(10, 0, 0)};
 	//p.CollisionWithRay(ray);
 	s = new scene();
-	//l = new Array();
-	//l[0] = new light(new vector(10, 10, 0));
-	l = new light(new vector(10, 10, 0));
+	l = new Array();
+	for(var i=0; i<16; i++)
+	{
+		l[i] = new light(new vector(10, 10+i, 0));
+	}
+	//l = new light(new vector(10, 10, 0));
 	r = new canvasRender(new vector(0, 5, 20), new vector(0, 0, -10), Math.PI/360*60);
 	//r = new canvasRender(new vector(0, 0, 20), new vector(0, 0, -10), Math.PI/360*60);
 	r.setDiffuseLightingModel(lambertModel);
